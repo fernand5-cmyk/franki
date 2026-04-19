@@ -84,6 +84,7 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
 
   useEffect(() => {
     if (view !== 'markets') return
+    setMarkets([])
     setLoading(true)
     const controller = new AbortController()
     fetch(`/api/markets?category=${activeTab}`, { signal: controller.signal })

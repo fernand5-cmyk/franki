@@ -319,7 +319,8 @@ def generate_fake_price_history(yes_price, n_points=24, hours_back=96):
 def get_open_markets(category=None):
     query = {"status": "open"}
     if category and category != "all":
-        query["category"] = category
+        # Case-insensitive match so legacy data with wrong casing still filters correctly
+        query["category"] = {"$regex": f"^{category.strip()}$", "$options": "i"}
     all_markets = list(markets.find(query))
     all_markets.sort(key=popularity_score, reverse=True)
     return [serialize(m) for m in all_markets]
@@ -331,7 +332,7 @@ def create_market(question, category, icon, yes_price, no_price, closes_at, crea
     ts = now()
     market = {
         "question":      question,
-        "category":      category,
+        "category":      category.lower().strip() if category else category,
         "icon":          icon,
         "status":        "open",
         "outcome":       None,
@@ -631,7 +632,7 @@ def submit_market_for_review(question, category, icon, question_type, yes_price,
     ts = now()
     market = {
         "question":          question,
-        "category":          category,
+        "category":          category.lower().strip() if category else category,
         "icon":              icon,
         "question_type":     question_type,
         "status":            "pending_review",
