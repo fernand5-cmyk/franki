@@ -1,0 +1,32 @@
+{
+  "name": "Franki",
+  "short_name": "Franki",
+  "description": "Penn Prediction Markets — Because everything on campus is a competition anyway.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#011f5b",
+  "theme_color": "#011f5b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["entertainment", "social"],
+  "shortcuts": [
+    {
+      "name": "Home Markets",
+      "url": "/",
+      "description": "Browse open prediction markets"
+    }
+  ]
+}

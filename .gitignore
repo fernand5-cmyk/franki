@@ -1,0 +1,34 @@
+# environment variables (secrets)
+.env
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# node
+node_modules/
+dist/
+
+# mac
+.DS_Store
+
+# logs
+*.log
+
+# vercel
+.vercel
+
+# vscode settings (optional)
+.vscode/
+
+# build output
+build/
+coverage/
