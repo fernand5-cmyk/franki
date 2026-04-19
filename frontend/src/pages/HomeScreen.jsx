@@ -85,13 +85,15 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
   useEffect(() => {
     if (view !== 'markets') return
     setLoading(true)
-    fetch(`/api/markets?category=${activeTab}`)
+    const controller = new AbortController()
+    fetch(`/api/markets?category=${activeTab}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setMarkets(data)
         setLoading(false)
       })
-      .catch(() => setLoading(false))
+      .catch(err => { if (err.name !== 'AbortError') setLoading(false) })
+    return () => controller.abort()
   }, [activeTab, view])
 
   const filtered = search.trim()
