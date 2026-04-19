@@ -2,9 +2,9 @@ from dotenv import load_dotenv
 load_dotenv()
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import ConnectionFailure
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from bson import ObjectId
-import os, hashlib
+import os, hashlib, random, secrets
 
 # ── Connection ────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,7 @@ bets              = db["bets"]
 leaderboards      = db["leaderboards"]
 transactions      = db["transactions"]
 push_subscriptions = db["push_subscriptions"]
+password_resets   = db["password_resets"]
 
 
 # ── Indexes ───────────────────────────────────────────────────────────────────
@@ -297,6 +298,24 @@ def get_user_stats(user_id):
 
 # ── Market helpers ────────────────────────────────────────────────────────────
 
+def generate_fake_price_history(yes_price, n_points=24, hours_back=96):
+    """Generate a plausible price history for new markets so the chart looks lived-in."""
+    ts = now()
+    interval = timedelta(hours=hours_back / n_points)
+    start_price = max(5, min(95, yes_price + random.randint(-18, 18)))
+    history = []
+    current = float(start_price)
+    for i in range(n_points):
+        t = ts - timedelta(hours=hours_back) + interval * i
+        target = yes_price
+        current += (target - current) * 0.12 + random.uniform(-2.5, 2.5)
+        current = max(5.0, min(95.0, current))
+        y = round(current)
+        history.append({"ts": t.isoformat(), "y": y, "n": 100 - y})
+    history.append({"ts": ts.isoformat(), "y": yes_price, "n": 100 - yes_price})
+    return history
+
+
 def get_open_markets(category=None):
     query = {"status": "open"}
     if category and category != "all":
@@ -318,11 +337,11 @@ def create_market(question, category, icon, yes_price, no_price, closes_at, crea
         "outcome":       None,
         "yes_price":     yes_price,
         "no_price":      no_price,
-        "volume":        0,
+        "volume":        1000,
         "watchers":      0,
         "closes_at":     closes_at,
         "created_by":    created_by,
-        "price_history": [{"ts": ts.isoformat(), "y": yes_price, "n": no_price}],
+        "price_history": generate_fake_price_history(yes_price),
         "created_at":    ts,
         "updated_at":    ts,
     }
@@ -619,11 +638,11 @@ def submit_market_for_review(question, category, icon, question_type, yes_price,
         "outcome":           None,
         "yes_price":         yes_price,
         "no_price":          100 - yes_price,
-        "volume":            0,
+        "volume":            1000,
         "watchers":          0,
         "closes_at":         closes_at,
         "created_by":        created_by,
-        "price_history":     [{"ts": ts.isoformat(), "y": yes_price, "n": 100 - yes_price}],
+        "price_history":     generate_fake_price_history(yes_price),
         "rejection_reason":  None,
         "created_at":        ts,
         "updated_at":        ts,
@@ -782,6 +801,64 @@ def notify_bet_winners(market_id, outcome):
         send_push_to_user(b["user_id"], "🏆 You won!", f"{q}", url="/", tag="bet-won")
     for b in losing_bets:
         send_push_to_user(b["user_id"], "Better luck next time", f"{q} resolved {outcome.upper()}", url="/", tag="bet-lost")
+
+
+# ── Password reset ────────────────────────────────────────────────────────────
+
+def generate_reset_token(email):
+    """Create a 1-hour reset token for the given email. Returns (token, error)."""
+    user = users.find_one({"email": email})
+    if not user:
+        return None, "No account found with that email"
+    token = secrets.token_urlsafe(32)
+    password_resets.update_one(
+        {"email": email},
+        {"$set": {"token": token, "email": email, "expires_at": now() + timedelta(hours=1), "created_at": now()}},
+        upsert=True,
+    )
+    return token, None
+
+def reset_password_with_token(token, new_password):
+    """Validate reset token and set new password. Returns (result, error)."""
+    if not token or not new_password:
+        return None, "Token and new password are required"
+    reset = password_resets.find_one({"token": token})
+    if not reset:
+        return None, "Invalid or expired reset token"
+    if reset["expires_at"] < now():
+        password_resets.delete_one({"token": token})
+        return None, "Reset token has expired"
+    users.update_one(
+        {"email": reset["email"]},
+        {"$set": {"password_hash": hash_password(new_password), "updated_at": now()}}
+    )
+    password_resets.delete_one({"token": token})
+    return {"success": True}, None
+
+
+# ── Followers / following ─────────────────────────────────────────────────────
+
+def get_user_followers(user_id):
+    user = users.find_one({"auth0_id": user_id})
+    if not user:
+        return []
+    ids = user.get("followers") or []
+    result = list(users.find(
+        {"auth0_id": {"$in": ids}},
+        {"auth0_id": 1, "display_name": 1, "username": 1, "avatar_initials": 1, "balance": 1}
+    ))
+    return [serialize(u) for u in result]
+
+def get_user_following(user_id):
+    user = users.find_one({"auth0_id": user_id})
+    if not user:
+        return []
+    ids = user.get("following") or []
+    result = list(users.find(
+        {"auth0_id": {"$in": ids}},
+        {"auth0_id": 1, "display_name": 1, "username": 1, "avatar_initials": 1, "balance": 1}
+    ))
+    return [serialize(u) for u in result]
 
 
 # ── Admin analytics ───────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ function unlockedAchievements(stats, totalBets) {
   return unlocked
 }
 
-function LeaderboardRow({ rank, user, isMe, currentUserId, token }) {
+function LeaderboardRow({ rank, user, isMe, token, onFollowChange }) {
   const initials = user.avatar_initials || user.display_name?.split(' ').map(w => w[0]).join('').slice(0,2) || '?'
   const [following, setFollowing] = useState(false)
   const [loadingFollow, setLoadingFollow] = useState(false)
@@ -56,8 +56,10 @@ function LeaderboardRow({ rank, user, isMe, currentUserId, token }) {
       method,
       headers: { Authorization: `Bearer ${token}` }
     })
-    setFollowing(f => !f)
+    const nowFollowing = !following
+    setFollowing(nowFollowing)
     setLoadingFollow(false)
+    if (onFollowChange) onFollowChange(user.auth0_id, nowFollowing)
   }
 
   return (
@@ -84,10 +86,48 @@ function LeaderboardRow({ rank, user, isMe, currentUserId, token }) {
   )
 }
 
+function SocialUserRow({ user, isMe, token, initialFollowing, onFollowChange }) {
+  const initials = user.avatar_initials || user.display_name?.split(' ').map(w => w[0]).join('').slice(0,2) || '?'
+  const [following, setFollowing] = useState(initialFollowing ?? false)
+  const [loading, setLoading] = useState(false)
+
+  const toggle = async () => {
+    setLoading(true)
+    const method = following ? 'DELETE' : 'POST'
+    await fetch(`/api/users/${encodeURIComponent(user.auth0_id)}/follow`, {
+      method,
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {})
+    const nowFollowing = !following
+    setFollowing(nowFollowing)
+    setLoading(false)
+    if (onFollowChange) onFollowChange(user.auth0_id, nowFollowing)
+  }
+
+  return (
+    <div className="social-user-row">
+      <div className="lb-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{initials}</div>
+      <div className="lb-name" style={{ flex: 1 }}>
+        <div className="lb-display-name">{user.display_name}</div>
+        <div className="lb-username">{user.username}</div>
+      </div>
+      {!isMe && (
+        <button
+          className={`follow-btn ${following ? 'following' : ''}`}
+          onClick={toggle}
+          disabled={loading}
+        >
+          {following ? 'Following' : '+ Follow'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdate, onAchievementUnlocked }) {
   const [user, setUser]             = useState(initialUser)
   const [stats, setStats]           = useState(null)
-  const [lbMode, setLbMode]         = useState('global')  // 'global' | 'school' | 'year'
+  const [lbMode, setLbMode]         = useState('global')
   const [leaderboard, setLeaderboard] = useState([])
   const [lbLoading, setLbLoading]   = useState(true)
   const [editing, setEditing]       = useState(false)
@@ -95,6 +135,25 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
   const [editYear, setEditYear]     = useState(initialUser.graduation_year ? String(initialUser.graduation_year) : '')
   const [editName, setEditName]     = useState(initialUser.display_name || '')
   const [saving, setSaving]         = useState(false)
+
+  // Social
+  const [socialTab, setSocialTab]     = useState('following')  // 'following' | 'followers'
+  const [following, setFollowing]     = useState([])
+  const [followers, setFollowers]     = useState([])
+  const [socialLoaded, setSocialLoaded] = useState(false)
+
+  // Groups (custom leaderboards)
+  const [myGroups, setMyGroups]           = useState([])
+  const [groupsLoaded, setGroupsLoaded]   = useState(false)
+  const [showCreateGroup, setShowCreateGroup] = useState(false)
+  const [newGroupName, setNewGroupName]   = useState('')
+  const [newGroupPublic, setNewGroupPublic] = useState(false)
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [joinCode, setJoinCode]           = useState('')
+  const [joiningGroup, setJoiningGroup]   = useState(false)
+  const [groupMsg, setGroupMsg]           = useState('')
+  const [expandedGroup, setExpandedGroup] = useState(null)
+  const [groupRankings, setGroupRankings] = useState({})
 
   const token = localStorage.getItem('token')
   const headers = { Authorization: `Bearer ${token}` }
@@ -105,12 +164,10 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
       .then(s => { if (s.total_bets !== undefined) setStats(s) })
       .catch(() => {})
 
-    // Check and grant any newly unlocked achievements
     fetch('/api/achievements/check', { method: 'POST', headers })
       .then(r => r.json())
       .then(data => {
         if (data.newly_granted?.length > 0 && onAchievementUnlocked) {
-          // Also refresh user balance since LB was granted
           fetch('/api/users/me', { headers })
             .then(r => r.json())
             .then(u => { if (u.display_name) { setUser(u); onUserUpdate(u) } })
@@ -118,6 +175,12 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
           data.newly_granted.forEach(a => onAchievementUnlocked(a))
         }
       })
+      .catch(() => {})
+
+    // Refresh user to get latest followers/following arrays
+    fetch('/api/users/me', { headers })
+      .then(r => r.json())
+      .then(u => { if (u.display_name) setUser(u) })
       .catch(() => {})
   }, [])
 
@@ -134,6 +197,23 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
       .then(data => { if (Array.isArray(data)) setLeaderboard(data); setLbLoading(false) })
       .catch(() => setLbLoading(false))
   }, [lbMode, user.school, user.graduation_year])
+
+  // Lazy-load social lists when section is first opened
+  const loadSocial = () => {
+    if (socialLoaded) return
+    setSocialLoaded(true)
+    fetch('/api/users/me/following', { headers })
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setFollowing(d) }).catch(() => {})
+    fetch('/api/users/me/followers', { headers })
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setFollowers(d) }).catch(() => {})
+  }
+
+  const loadGroups = () => {
+    if (groupsLoaded) return
+    setGroupsLoaded(true)
+    fetch('/api/leaderboards/mine', { headers })
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setMyGroups(d) }).catch(() => {})
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -157,15 +237,69 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
     setSaving(false)
   }
 
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) return
+    setCreatingGroup(true)
+    try {
+      const res  = await fetch('/api/leaderboards', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGroupName.trim(), is_public: newGroupPublic })
+      })
+      const data = await res.json()
+      if (data._id) {
+        setMyGroups(g => [data, ...g])
+        setShowCreateGroup(false)
+        setNewGroupName('')
+        setGroupMsg(`Group "${data.name}" created! Invite code: ${data.invite_code}`)
+      }
+    } catch {}
+    setCreatingGroup(false)
+  }
+
+  const handleJoinGroup = async () => {
+    if (!joinCode.trim()) return
+    setJoiningGroup(true)
+    setGroupMsg('')
+    try {
+      const res  = await fetch(`/api/leaderboards/join/${joinCode.trim().toUpperCase()}`, {
+        method: 'POST',
+        headers
+      })
+      const data = await res.json()
+      if (data.leaderboard_id) {
+        setGroupMsg('Joined! Refreshing groups…')
+        setJoinCode('')
+        setGroupsLoaded(false)
+        // Refresh
+        fetch('/api/leaderboards/mine', { headers })
+          .then(r => r.json()).then(d => { if (Array.isArray(d)) { setMyGroups(d); setGroupsLoaded(true) } }).catch(() => {})
+      } else {
+        setGroupMsg(data.error || 'Invalid invite code')
+      }
+    } catch {
+      setGroupMsg('Network error')
+    }
+    setJoiningGroup(false)
+  }
+
+  const loadGroupRankings = async (groupId) => {
+    if (groupRankings[groupId]) { setExpandedGroup(expandedGroup === groupId ? null : groupId); return }
+    const res  = await fetch(`/api/leaderboards/${groupId}`, { headers })
+    const data = await res.json()
+    if (data.rankings) setGroupRankings(r => ({ ...r, [groupId]: data.rankings }))
+    setExpandedGroup(groupId)
+  }
+
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 9 }, (_, i) => currentYear + i)
 
-  const totalBets  = stats?.total_bets ?? 0
-  const unlocked   = stats ? unlockedAchievements(stats, totalBets) : new Set()
-  const schoolShort = SCHOOL_SHORT[user.school] || user.school || 'No school set'
-  const gradLabel   = user.graduation_year ? `'${String(user.graduation_year).slice(2)}` : ''
-
-  const myRankInLb = leaderboard.findIndex(u => u.auth0_id === user.auth0_id) + 1
+  const totalBets    = stats?.total_bets ?? 0
+  const unlocked     = stats ? unlockedAchievements(stats, totalBets) : new Set()
+  const schoolShort  = SCHOOL_SHORT[user.school] || user.school || 'No school set'
+  const gradLabel    = user.graduation_year ? `'${String(user.graduation_year).slice(2)}` : ''
+  const followerCount  = (user.followers || []).length
+  const followingCount = (user.following || []).length
 
   return (
     <div className="profile-screen">
@@ -235,6 +369,11 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                 {schoolShort}{gradLabel ? ` ${gradLabel}` : ''}
               </div>
             )}
+            <div className="profile-social-counts">
+              <span>{followingCount} <span className="social-count-label">Following</span></span>
+              <span className="social-count-sep">·</span>
+              <span>{followerCount} <span className="social-count-label">Followers</span></span>
+            </div>
           </div>
           <div className="profile-stats-mini">
             <div className="profile-stat-mini">
@@ -327,7 +466,66 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
         </div>
       )}
 
-      {/* Leaderboard */}
+      {/* ── Social section ── */}
+      {!editing && (
+        <div className="leaderboard-section">
+          <h2 className="section-title">Social</h2>
+          <div className="lb-mode-tabs">
+            <button
+              className={`lb-mode-tab ${socialTab === 'following' ? 'active' : ''}`}
+              onClick={() => { setSocialTab('following'); loadSocial() }}
+            >
+              Following ({followingCount})
+            </button>
+            <button
+              className={`lb-mode-tab ${socialTab === 'followers' ? 'active' : ''}`}
+              onClick={() => { setSocialTab('followers'); loadSocial() }}
+            >
+              Followers ({followerCount})
+            </button>
+          </div>
+
+          {!socialLoaded && (
+            <div className="empty-state" style={{ fontSize: 13, padding: '12px 0' }}>
+              Tap a tab to load your social graph
+            </div>
+          )}
+
+          {socialLoaded && socialTab === 'following' && (
+            following.length === 0
+              ? <div className="empty-state">You're not following anyone yet — follow people on the leaderboard!</div>
+              : <div className="leaderboard-list">
+                  {following.map(u => (
+                    <SocialUserRow
+                      key={u.auth0_id}
+                      user={u}
+                      isMe={u.auth0_id === user.auth0_id}
+                      token={token}
+                      initialFollowing={true}
+                    />
+                  ))}
+                </div>
+          )}
+
+          {socialLoaded && socialTab === 'followers' && (
+            followers.length === 0
+              ? <div className="empty-state">No followers yet</div>
+              : <div className="leaderboard-list">
+                  {followers.map(u => (
+                    <SocialUserRow
+                      key={u.auth0_id}
+                      user={u}
+                      isMe={u.auth0_id === user.auth0_id}
+                      token={token}
+                      initialFollowing={(user.following || []).includes(u.auth0_id)}
+                    />
+                  ))}
+                </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Leaderboard section ── */}
       {!editing && (
         <div className="leaderboard-section">
           <h2 className="section-title">Leaderboard</h2>
@@ -369,12 +567,122 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                   rank={i + 1}
                   user={u}
                   isMe={u.auth0_id === user.auth0_id}
-                  currentUserId={user.auth0_id}
                   token={token}
                 />
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Groups section ── */}
+      {!editing && (
+        <div className="leaderboard-section" onClick={loadGroups}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h2 className="section-title" style={{ marginBottom: 0 }}>Groups</h2>
+            <button
+              className="follow-btn"
+              style={{ fontSize: 12, padding: '5px 10px' }}
+              onClick={e => { e.stopPropagation(); loadGroups(); setShowCreateGroup(v => !v); setGroupMsg('') }}
+            >
+              + New Group
+            </button>
+          </div>
+
+          {/* Create group modal */}
+          {showCreateGroup && (
+            <div className="profile-edit-card" style={{ marginTop: 12 }} onClick={e => e.stopPropagation()}>
+              <h3 className="profile-edit-title">Create a Group</h3>
+              <input
+                className="profile-edit-input"
+                placeholder="Group name"
+                value={newGroupName}
+                onChange={e => setNewGroupName(e.target.value)}
+              />
+              <label className="group-public-label">
+                <input
+                  type="checkbox"
+                  checked={newGroupPublic}
+                  onChange={e => setNewGroupPublic(e.target.checked)}
+                  style={{ marginRight: 6 }}
+                />
+                Public group
+              </label>
+              <div className="profile-edit-actions">
+                <button className="btn-primary" onClick={handleCreateGroup} disabled={creatingGroup || !newGroupName.trim()}>
+                  {creatingGroup ? 'Creating…' : 'Create'}
+                </button>
+                <button className="btn-secondary" onClick={() => setShowCreateGroup(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Join with invite code */}
+          <div className="group-join-row" onClick={e => e.stopPropagation()}>
+            <input
+              className="profile-edit-input"
+              placeholder="Invite code (e.g. ABC123)"
+              value={joinCode}
+              onChange={e => setJoinCode(e.target.value.toUpperCase())}
+              style={{ marginBottom: 0 }}
+            />
+            <button
+              className="follow-btn"
+              style={{ marginLeft: 8, whiteSpace: 'nowrap' }}
+              onClick={handleJoinGroup}
+              disabled={joiningGroup || !joinCode.trim()}
+            >
+              {joiningGroup ? '…' : 'Join'}
+            </button>
+          </div>
+          {groupMsg && <div className="lb-setup-hint" style={{ color: groupMsg.includes('created') || groupMsg.includes('Joined') ? '#00a63e' : '#e7000b' }}>{groupMsg}</div>}
+
+          {/* Groups list */}
+          {groupsLoaded && myGroups.length === 0 && (
+            <div className="empty-state">No groups yet — create one or join with an invite code</div>
+          )}
+
+          {groupsLoaded && myGroups.map(group => (
+            <div key={group._id} className="group-card">
+              <div
+                className="group-card-header"
+                onClick={e => { e.stopPropagation(); loadGroupRankings(group._id) }}
+              >
+                <div className="group-card-info">
+                  <div className="lb-display-name">{group.name}</div>
+                  <div className="lb-username">
+                    Code: <code style={{ fontWeight: 600, letterSpacing: 1 }}>{group.invite_code}</code>
+                    {' · '}{group.member_ids?.length || 1} member{group.member_ids?.length !== 1 ? 's' : ''}
+                    {group.is_public && ' · Public'}
+                  </div>
+                </div>
+                <svg
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  width="16" height="16"
+                  style={{ transform: expandedGroup === group._id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
+                >
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </div>
+
+              {expandedGroup === group._id && groupRankings[group._id] && (
+                <div className="group-rankings">
+                  {groupRankings[group._id].map((u, i) => (
+                    <div key={u.auth0_id || i} className={`lb-row ${u.auth0_id === user.auth0_id ? 'lb-row-me' : ''}`} style={{ padding: '6px 0' }}>
+                      <div className="lb-rank">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}</div>
+                      <div className="lb-avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+                        {u.avatar_initials || '?'}
+                      </div>
+                      <div className="lb-name" style={{ flex: 1 }}>
+                        <div className="lb-display-name">{u.display_name}</div>
+                      </div>
+                      <div className="lb-balance">{(u.balance || 0).toLocaleString()} LB</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

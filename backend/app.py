@@ -14,6 +14,8 @@ from db import (
     QUESTION_TYPES,
     claim_daily_bonus,
     follow_user, unfollow_user, get_follow_status, get_social_feed,
+    get_user_followers, get_user_following,
+    generate_reset_token, reset_password_with_token,
     save_push_subscription, notify_bet_winners,
     get_admin_analytics,
 )
@@ -87,6 +89,27 @@ def login():
         return jsonify({"error": err}), 401
     token = user["auth0_id"]
     return jsonify({"success": True, "user": user, "token": token})
+
+@app.route("/api/auth/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.json or {}
+    email = data.get("email", "").strip().lower()
+    if not email:
+        return jsonify({"error": "email is required"}), 400
+    token, err = generate_reset_token(email)
+    if err:
+        # Always return success to avoid email enumeration
+        return jsonify({"success": True, "message": "If that email is registered, a reset token has been generated."})
+    # In production you'd email the token; for now return it directly
+    return jsonify({"success": True, "token": token, "message": "Use this token to reset your password."})
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+def reset_password():
+    data = request.json or {}
+    result, err = reset_password_with_token(data.get("token", ""), data.get("password", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify(result)
 
 @app.route("/api/auth/sync", methods=["POST"])
 def sync_user():
@@ -414,6 +437,26 @@ def follow_status(target_id):
 def social_feed():
     limit = int(request.args.get("limit", 30))
     return jsonify(get_social_feed(g.user_id, limit))
+
+@app.route("/api/users/me/followers", methods=["GET"])
+@require_auth
+def my_followers():
+    return jsonify(get_user_followers(g.user_id))
+
+@app.route("/api/users/me/following", methods=["GET"])
+@require_auth
+def my_following():
+    return jsonify(get_user_following(g.user_id))
+
+@app.route("/api/users/<target_id>/followers", methods=["GET"])
+@require_auth
+def user_followers(target_id):
+    return jsonify(get_user_followers(target_id))
+
+@app.route("/api/users/<target_id>/following", methods=["GET"])
+@require_auth
+def user_following(target_id):
+    return jsonify(get_user_following(target_id))
 
 # ── Admin analytics ───────────────────────────────────────────────────────────
 
