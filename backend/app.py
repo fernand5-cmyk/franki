@@ -7,7 +7,9 @@ from db import (
     get_open_markets, get_market, create_market, resolve_market,
     place_bet, get_user_bets, sell_bet,
     get_global_leaderboard, get_school_leaderboard, get_year_leaderboard,
+    get_following_leaderboard,
     get_leaderboard_rankings, leaderboards, PENN_SCHOOLS,
+    get_public_leaderboards,
     log_transaction,
     check_and_grant_achievements,
     submit_market_for_review, get_pending_markets, approve_market, reject_market,
@@ -15,6 +17,7 @@ from db import (
     claim_daily_bonus,
     follow_user, unfollow_user, get_follow_status, get_social_feed,
     get_user_followers, get_user_following,
+    get_user_public_profile,
     generate_reset_token, reset_password_with_token,
     save_push_subscription, notify_bet_winners,
     get_admin_analytics,
@@ -217,7 +220,11 @@ def make_bet():
     )
     if error:
         return jsonify({"error": error}), 400
-    return jsonify(bet), 201
+    # Check achievements after every bet
+    newly = check_and_grant_achievements(g.user_id)
+    result = dict(bet)
+    result["newly_granted"] = newly
+    return jsonify(result), 201
 
 @app.route("/api/bets/mine", methods=["GET"])
 @require_auth
@@ -265,6 +272,12 @@ def year_leaderboard():
         return jsonify({"error": "year must be an integer"}), 400
     return jsonify(get_year_leaderboard(year))
 
+@app.route("/api/leaderboard/following", methods=["GET"])
+@require_auth
+def following_leaderboard():
+    limit = int(request.args.get("limit", 50))
+    return jsonify(get_following_leaderboard(g.user_id, limit))
+
 # ── Custom leaderboards ───────────────────────────────────────────────────────
 
 @app.route("/api/leaderboards", methods=["POST"])
@@ -283,7 +296,11 @@ def create_leaderboard():
     }
     result = leaderboards.insert_one(board)
     board["_id"] = str(result.inserted_id)
-    return jsonify(serialize(board)), 201
+    # Check for "made_leaderboard" achievement
+    newly = check_and_grant_achievements(g.user_id)
+    board_out = serialize(board)
+    board_out["newly_granted"] = newly
+    return jsonify(board_out), 201
 
 @app.route("/api/leaderboards/join/<invite_code>", methods=["POST"])
 @require_auth
@@ -295,7 +312,8 @@ def join_leaderboard(invite_code):
         {"_id": to_id(str(board["_id"]))},
         {"$addToSet": {"member_ids": g.user_id}, "$set": {"updated_at": now()}}
     )
-    return jsonify({"message": "Joined", "leaderboard_id": str(board["_id"])})
+    newly = check_and_grant_achievements(g.user_id)
+    return jsonify({"message": "Joined", "leaderboard_id": str(board["_id"]), "newly_granted": newly})
 
 @app.route("/api/leaderboards/<leaderboard_id>", methods=["GET"])
 @require_auth
@@ -310,6 +328,26 @@ def get_leaderboard(leaderboard_id):
 def my_leaderboards():
     boards = leaderboards.find({"member_ids": g.user_id})
     return jsonify([serialize(b) for b in boards])
+
+@app.route("/api/leaderboards/public", methods=["GET"])
+def public_leaderboards():
+    return jsonify(get_public_leaderboards())
+
+@app.route("/api/leaderboards/<leaderboard_id>/join", methods=["POST"])
+@require_auth
+def join_leaderboard_by_id(leaderboard_id):
+    """Join a public leaderboard by its ID (no invite code needed)."""
+    board = leaderboards.find_one({"_id": to_id(leaderboard_id)})
+    if not board:
+        return jsonify({"error": "Leaderboard not found"}), 404
+    if not board.get("is_public"):
+        return jsonify({"error": "This group is private — use an invite code"}), 403
+    leaderboards.update_one(
+        {"_id": to_id(leaderboard_id)},
+        {"$addToSet": {"member_ids": g.user_id}, "$set": {"updated_at": now()}}
+    )
+    newly = check_and_grant_achievements(g.user_id)
+    return jsonify({"message": "Joined", "leaderboard_id": leaderboard_id, "newly_granted": newly})
 
 # ── Achievements ─────────────────────────────────────────────────────────────
 
@@ -393,6 +431,9 @@ def daily_bonus():
     result, err = claim_daily_bonus(g.user_id)
     if err:
         return jsonify({"error": err}), 400
+    if not result.get("already_claimed"):
+        newly = check_and_grant_achievements(g.user_id)
+        result["newly_granted"] = newly
     return jsonify(result)
 
 # ── Push subscriptions ────────────────────────────────────────────────────────
@@ -437,6 +478,14 @@ def follow_status(target_id):
 def social_feed():
     limit = int(request.args.get("limit", 30))
     return jsonify(get_social_feed(g.user_id, limit))
+
+@app.route("/api/users/<target_id>/public-profile", methods=["GET"])
+@require_auth
+def user_public_profile(target_id):
+    profile = get_user_public_profile(target_id)
+    if not profile:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify(profile)
 
 @app.route("/api/users/me/followers", methods=["GET"])
 @require_auth

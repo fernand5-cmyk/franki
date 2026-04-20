@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react'
 
 const ACHIEVEMENTS = [
-  { id: 'first_bet',      icon: '🎯', title: 'First Bet',       desc: 'Place your first bet',           color: '#3b82f6', reward: 50  },
-  { id: 'market_maven',   icon: '📊', title: 'Market Maven',    desc: 'Traded in 10+ markets',          color: '#06b6d4', reward: 100 },
-  { id: 'high_roller',    icon: '👑', title: 'High Roller',     desc: 'Bet 1000+ Liberty Bucks',        color: '#f59e0b', reward: 200 },
-  { id: 'hot_streak',     icon: '🔥', title: 'Hot Streak',      desc: '3 consecutive wins',             color: '#ef4444', reward: 150 },
-  { id: 'prediction_pro', icon: '🔮', title: 'Prediction Pro',  desc: '75%+ win rate (20 markets)',     color: '#8b5cf6', reward: 500 },
-  { id: 'early_bird',     icon: '⭐', title: 'Early Bird',      desc: 'First 100 bets on a market',     color: '#10b981', reward: 75  },
+  { id: 'first_bet',        icon: '🎯', title: 'First Bet',         desc: 'Place your first bet',                  color: '#3b82f6', reward: 50  },
+  { id: 'place_ten_bets',   icon: '🎲', title: 'Dedicated Bettor',  desc: 'Place 10 total bets',                   color: '#8b5cf6', reward: 100 },
+  { id: 'market_maven',     icon: '📊', title: 'Market Maven',      desc: 'Bet in 10+ different markets',           color: '#06b6d4', reward: 150 },
+  { id: 'high_roller',      icon: '👑', title: 'High Roller',       desc: 'Bet 1,000+ Liberty Bucks total',        color: '#f59e0b', reward: 200 },
+  { id: 'hot_streak',       icon: '🔥', title: 'Hot Streak',        desc: '3 consecutive wins',                    color: '#ef4444', reward: 150 },
+  { id: 'prediction_pro',   icon: '🔮', title: 'Prediction Pro',    desc: '75%+ win rate (20+ resolved bets)',      color: '#a855f7', reward: 500 },
+  { id: 'early_bird',       icon: '⭐', title: 'Early Bird',        desc: 'First 5 bets on a market',              color: '#10b981', reward: 75  },
+  { id: 'early_bird_10',    icon: '🌟', title: 'Trendsetter',       desc: 'First 10 bets on a market',             color: '#0ea5e9', reward: 75  },
+  { id: 'made_leaderboard', icon: '🏗️', title: 'Group Leader',      desc: 'Create your first group leaderboard',   color: '#f97316', reward: 50  },
+  { id: 'daily_streak',     icon: '📅', title: 'Streak Master',     desc: '10-day daily bonus streak',             color: '#ec4899', reward: 150 },
+  { id: 'join_leaderboard', icon: '🤝', title: 'Team Player',       desc: "Join someone else's leaderboard",       color: '#14b8a6', reward: 50  },
 ]
 
 const SCHOOL_SHORT = {
@@ -26,17 +31,180 @@ const SCHOOL_SHORT = {
 
 const PENN_SCHOOLS = Object.keys(SCHOOL_SHORT)
 
-function unlockedAchievements(stats, totalBets) {
-  const unlocked = new Set()
-  if (totalBets >= 1)                              unlocked.add('first_bet')
-  if (stats.total_bets >= 10)                      unlocked.add('market_maven')
-  if (stats.total_wagered >= 1000)                 unlocked.add('high_roller')
-  if (stats.best_streak >= 3)                      unlocked.add('hot_streak')
-  if (stats.win_rate >= 75 && stats.total_bets >= 20) unlocked.add('prediction_pro')
-  return unlocked
+// ── UserProfileModal ──────────────────────────────────────────────────────────
+function UserProfileModal({ targetId, currentUserId, token, onClose, onFollowChange }) {
+  const [profile, setProfile] = useState(null)
+  const [following, setFollowing] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [followLoading, setFollowLoading] = useState(false)
+
+  useEffect(() => {
+    const encoded = encodeURIComponent(targetId)
+    Promise.all([
+      fetch(`/api/users/${encoded}/public-profile`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`/api/users/${encoded}/follow-status`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    ]).then(([p, fs]) => {
+      setProfile(p)
+      setFollowing(fs.following ?? false)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [targetId])
+
+  const toggleFollow = async () => {
+    setFollowLoading(true)
+    const method = following ? 'DELETE' : 'POST'
+    await fetch(`/api/users/${encodeURIComponent(targetId)}/follow`, {
+      method,
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {})
+    const nowFollowing = !following
+    setFollowing(nowFollowing)
+    setFollowLoading(false)
+    if (onFollowChange) onFollowChange(targetId, nowFollowing)
+  }
+
+  const unlocked = new Set(profile?.achievements_granted || [])
+  const schoolShort = SCHOOL_SHORT[profile?.school] || profile?.school || ''
+  const gradLabel = profile?.graduation_year ? `'${String(profile.graduation_year).slice(2)}` : ''
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="user-profile-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-drag-bar" />
+
+        {loading ? (
+          <div className="loading-text" style={{ padding: '40px 0' }}>Loading…</div>
+        ) : !profile?.display_name ? (
+          <div className="empty-state">User not found</div>
+        ) : (
+          <>
+            {/* Header */}
+            <div className="upm-header">
+              <div className="upm-avatar">{profile.avatar_initials || '?'}</div>
+              <div className="upm-info">
+                <div className="upm-name">{profile.display_name}</div>
+                {(schoolShort || gradLabel) && (
+                  <div className="upm-school">{schoolShort}{gradLabel ? ` ${gradLabel}` : ''}</div>
+                )}
+                <div className="upm-social">
+                  <span>{profile.following_count} <span style={{ opacity: 0.65, fontWeight: 500 }}>Following</span></span>
+                  <span style={{ opacity: 0.4 }}>·</span>
+                  <span>{profile.followers_count} <span style={{ opacity: 0.65, fontWeight: 500 }}>Followers</span></span>
+                </div>
+              </div>
+              {targetId !== currentUserId && (
+                <button
+                  className={`follow-btn ${following ? 'following' : ''}`}
+                  onClick={toggleFollow}
+                  disabled={followLoading}
+                  style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                >
+                  {following ? 'Following' : '+ Follow'}
+                </button>
+              )}
+            </div>
+
+            {/* Stats row */}
+            {profile.stats && (
+              <div className="upm-stats">
+                <div className="upm-stat">
+                  <div className="upm-stat-val">{profile.stats.won_bets}</div>
+                  <div className="upm-stat-lbl">Wins</div>
+                </div>
+                <div className="upm-stat">
+                  <div className="upm-stat-val">{profile.stats.win_rate}%</div>
+                  <div className="upm-stat-lbl">Win Rate</div>
+                </div>
+                <div className="upm-stat">
+                  <div className="upm-stat-val">#{profile.stats.rank}</div>
+                  <div className="upm-stat-lbl">Rank</div>
+                </div>
+                <div className="upm-stat">
+                  <div className="upm-stat-val">{profile.stats.total_bets}</div>
+                  <div className="upm-stat-lbl">Bets</div>
+                </div>
+              </div>
+            )}
+
+            {/* Achievements */}
+            {unlocked.size > 0 && (
+              <div style={{ padding: '0 16px 16px' }}>
+                <div className="section-title" style={{ marginBottom: 10 }}>Achievements</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {ACHIEVEMENTS.filter(a => unlocked.has(a.id)).map(a => (
+                    <div
+                      key={a.id}
+                      style={{
+                        background: a.color, color: 'white', borderRadius: 10,
+                        padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 12, fontWeight: 600,
+                      }}
+                    >
+                      <span>{a.icon}</span>{a.title}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
-function LeaderboardRow({ rank, user, isMe, token, onFollowChange }) {
+// ── GroupDetailModal ──────────────────────────────────────────────────────────
+function GroupDetailModal({ group, currentUserId, token, onClose }) {
+  const [rankings, setRankings] = useState([])
+  const [loading, setLoading]   = useState(true)
+
+  useEffect(() => {
+    fetch(`/api/leaderboards/${group._id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.rankings) setRankings(d.rankings); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [group._id])
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="user-profile-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-drag-bar" />
+        <div style={{ padding: '0 16px 8px' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-dark)', marginBottom: 2 }}>{group.name}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-light)' }}>
+            Code: <code style={{ fontWeight: 700, letterSpacing: 1 }}>{group.invite_code}</code>
+            {' · '}{group.member_ids?.length || 1} member{group.member_ids?.length !== 1 ? 's' : ''}
+            {group.is_public && ' · Public'}
+          </div>
+        </div>
+        {loading ? (
+          <div className="loading-text">Loading…</div>
+        ) : rankings.length === 0 ? (
+          <div className="empty-state">No members yet</div>
+        ) : (
+          <div className="leaderboard-list" style={{ margin: '12px 16px' }}>
+            {rankings.map((u, i) => (
+              <div key={u.auth0_id || i} className={`lb-row ${u.auth0_id === currentUserId ? 'lb-row-me' : ''}`}>
+                <div className={`lb-rank ${i < 3 ? `top-${i+1}` : ''}`}>
+                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}
+                </div>
+                <div className="lb-avatar">{u.avatar_initials || '?'}</div>
+                <div className="lb-name">
+                  <div className="lb-display-name">{u.display_name}</div>
+                  <div className="lb-username">{u.username}</div>
+                </div>
+                <div className="lb-balance">{(u.balance || 0).toLocaleString()} LB</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── LeaderboardRow ────────────────────────────────────────────────────────────
+function LeaderboardRow({ rank, user, isMe, token, onFollowChange, onViewProfile }) {
   const initials = user.avatar_initials || user.display_name?.split(' ').map(w => w[0]).join('').slice(0,2) || '?'
   const [following, setFollowing] = useState(false)
   const [loadingFollow, setLoadingFollow] = useState(false)
@@ -67,7 +235,14 @@ function LeaderboardRow({ rank, user, isMe, token, onFollowChange }) {
       <div className={`lb-rank ${rank <= 3 ? `top-${rank}` : ''}`}>
         {rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : `#${rank}`}
       </div>
-      <div className="lb-avatar">{initials}</div>
+      <div
+        className="lb-avatar"
+        style={{ cursor: !isMe ? 'pointer' : 'default' }}
+        onClick={() => !isMe && onViewProfile && onViewProfile(user.auth0_id)}
+        title={!isMe ? `View ${user.display_name}'s profile` : undefined}
+      >
+        {initials}
+      </div>
       <div className="lb-name">
         <div className="lb-display-name">{user.display_name}</div>
         <div className="lb-username">{user.username}</div>
@@ -86,7 +261,8 @@ function LeaderboardRow({ rank, user, isMe, token, onFollowChange }) {
   )
 }
 
-function SocialUserRow({ user, isMe, token, initialFollowing, onFollowChange }) {
+// ── SocialUserRow ─────────────────────────────────────────────────────────────
+function SocialUserRow({ user, isMe, token, initialFollowing, onFollowChange, onViewProfile }) {
   const initials = user.avatar_initials || user.display_name?.split(' ').map(w => w[0]).join('').slice(0,2) || '?'
   const [following, setFollowing] = useState(initialFollowing ?? false)
   const [loading, setLoading] = useState(false)
@@ -106,7 +282,14 @@ function SocialUserRow({ user, isMe, token, initialFollowing, onFollowChange }) 
 
   return (
     <div className="social-user-row">
-      <div className="lb-avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{initials}</div>
+      <div
+        className="lb-avatar"
+        style={{ width: 38, height: 38, fontSize: 14, cursor: !isMe ? 'pointer' : 'default', flexShrink: 0 }}
+        onClick={() => !isMe && onViewProfile && onViewProfile(user.auth0_id)}
+        title={!isMe ? `View ${user.display_name}'s profile` : undefined}
+      >
+        {initials}
+      </div>
       <div className="lb-name" style={{ flex: 1 }}>
         <div className="lb-display-name">{user.display_name}</div>
         <div className="lb-username">{user.username}</div>
@@ -124,9 +307,11 @@ function SocialUserRow({ user, isMe, token, initialFollowing, onFollowChange }) 
   )
 }
 
+// ── Main ProfileScreen ────────────────────────────────────────────────────────
 export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdate, onAchievementUnlocked }) {
   const [user, setUser]             = useState(initialUser)
   const [stats, setStats]           = useState(null)
+  const [statsLoading, setStatsLoading] = useState(true)
   const [lbMode, setLbMode]         = useState('global')
   const [leaderboard, setLeaderboard] = useState([])
   const [lbLoading, setLbLoading]   = useState(true)
@@ -137,12 +322,15 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
   const [saving, setSaving]         = useState(false)
 
   // Social
-  const [socialTab, setSocialTab]     = useState('following')  // 'following' | 'followers'
+  const [socialTab, setSocialTab]     = useState('following')
   const [following, setFollowing]     = useState([])
   const [followers, setFollowers]     = useState([])
   const [socialLoaded, setSocialLoaded] = useState(false)
 
-  // Groups (custom leaderboards)
+  // Profile modal (view another user)
+  const [viewingUserId, setViewingUserId] = useState(null)
+
+  // Groups
   const [myGroups, setMyGroups]           = useState([])
   const [groupsLoaded, setGroupsLoaded]   = useState(false)
   const [showCreateGroup, setShowCreateGroup] = useState(false)
@@ -152,17 +340,23 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
   const [joinCode, setJoinCode]           = useState('')
   const [joiningGroup, setJoiningGroup]   = useState(false)
   const [groupMsg, setGroupMsg]           = useState('')
-  const [expandedGroup, setExpandedGroup] = useState(null)
-  const [groupRankings, setGroupRankings] = useState({})
+  const [viewGroup, setViewGroup]         = useState(null)   // group object for full-view modal
+
+  // Public groups
+  const [publicGroups, setPublicGroups]     = useState([])
+  const [publicGroupsLoaded, setPublicGroupsLoaded] = useState(false)
+  const [joiningPublicId, setJoiningPublicId] = useState(null)
 
   const token = localStorage.getItem('token')
   const headers = { Authorization: `Bearer ${token}` }
 
+  // ── On mount: fetch stats + check achievements ──────────────────────────────
   useEffect(() => {
+    setStatsLoading(true)
     fetch('/api/users/me/stats', { headers })
       .then(r => r.json())
-      .then(s => { if (s.total_bets !== undefined) setStats(s) })
-      .catch(() => {})
+      .then(s => { if (s.total_bets !== undefined) setStats(s); setStatsLoading(false) })
+      .catch(() => setStatsLoading(false))
 
     fetch('/api/achievements/check', { method: 'POST', headers })
       .then(r => r.json())
@@ -177,28 +371,32 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
       })
       .catch(() => {})
 
-    // Refresh user to get latest followers/following arrays
     fetch('/api/users/me', { headers })
       .then(r => r.json())
       .then(u => { if (u.display_name) setUser(u) })
       .catch(() => {})
   }, [])
 
+  // ── Leaderboard fetch ───────────────────────────────────────────────────────
   useEffect(() => {
+    if (editing) return
     setLbLoading(true)
     let url = '/api/leaderboard/global?limit=20'
-    if (lbMode === 'school' && user.school) {
+    if (lbMode === 'school' && user.school)
       url = `/api/leaderboard/school?school=${encodeURIComponent(user.school)}&limit=20`
-    } else if (lbMode === 'year' && user.graduation_year) {
+    else if (lbMode === 'year' && user.graduation_year)
       url = `/api/leaderboard/year?year=${user.graduation_year}&limit=20`
-    }
-    fetch(url)
+    else if (lbMode === 'following')
+      url = '/api/leaderboard/following?limit=20'
+
+    const fetchOpts = lbMode === 'following' ? { headers } : {}
+    fetch(url, fetchOpts)
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setLeaderboard(data); setLbLoading(false) })
       .catch(() => setLbLoading(false))
-  }, [lbMode, user.school, user.graduation_year])
+  }, [lbMode, user.school, user.graduation_year, editing])
 
-  // Lazy-load social lists when section is first opened
+  // ── Lazy loaders ────────────────────────────────────────────────────────────
   const loadSocial = () => {
     if (socialLoaded) return
     setSocialLoaded(true)
@@ -215,6 +413,14 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
       .then(r => r.json()).then(d => { if (Array.isArray(d)) setMyGroups(d) }).catch(() => {})
   }
 
+  const loadPublicGroups = () => {
+    if (publicGroupsLoaded) return
+    setPublicGroupsLoaded(true)
+    fetch('/api/leaderboards/public')
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setPublicGroups(d) }).catch(() => {})
+  }
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -251,7 +457,13 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
         setMyGroups(g => [data, ...g])
         setShowCreateGroup(false)
         setNewGroupName('')
-        setGroupMsg(`Group "${data.name}" created! Invite code: ${data.invite_code}`)
+        setGroupMsg(`Group "${data.name}" created! Code: ${data.invite_code}`)
+        if (data.newly_granted?.length > 0 && onAchievementUnlocked) {
+          // Re-fetch user to get updated balance/achievements
+          fetch('/api/users/me', { headers }).then(r => r.json())
+            .then(u => { if (u.display_name) { setUser(u); onUserUpdate(u) } }).catch(() => {})
+          data.newly_granted.forEach(a => onAchievementUnlocked(a))
+        }
       }
     } catch {}
     setCreatingGroup(false)
@@ -268,12 +480,16 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
       })
       const data = await res.json()
       if (data.leaderboard_id) {
-        setGroupMsg('Joined! Refreshing groups…')
+        setGroupMsg('Joined! Refreshing…')
         setJoinCode('')
         setGroupsLoaded(false)
-        // Refresh
         fetch('/api/leaderboards/mine', { headers })
           .then(r => r.json()).then(d => { if (Array.isArray(d)) { setMyGroups(d); setGroupsLoaded(true) } }).catch(() => {})
+        if (data.newly_granted?.length > 0 && onAchievementUnlocked) {
+          fetch('/api/users/me', { headers }).then(r => r.json())
+            .then(u => { if (u.display_name) { setUser(u); onUserUpdate(u) } }).catch(() => {})
+          data.newly_granted.forEach(a => onAchievementUnlocked(a))
+        }
       } else {
         setGroupMsg(data.error || 'Invalid invite code')
       }
@@ -283,27 +499,63 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
     setJoiningGroup(false)
   }
 
-  const loadGroupRankings = async (groupId) => {
-    if (groupRankings[groupId]) { setExpandedGroup(expandedGroup === groupId ? null : groupId); return }
-    const res  = await fetch(`/api/leaderboards/${groupId}`, { headers })
-    const data = await res.json()
-    if (data.rankings) setGroupRankings(r => ({ ...r, [groupId]: data.rankings }))
-    setExpandedGroup(groupId)
+  const handleJoinPublicGroup = async (group) => {
+    setJoiningPublicId(group._id)
+    try {
+      const res  = await fetch(`/api/leaderboards/${group._id}/join`, { method: 'POST', headers })
+      const data = await res.json()
+      if (data.message === 'Joined') {
+        setGroupMsg(`Joined "${group.name}"!`)
+        setGroupsLoaded(false)
+        fetch('/api/leaderboards/mine', { headers })
+          .then(r => r.json()).then(d => { if (Array.isArray(d)) { setMyGroups(d); setGroupsLoaded(true) } }).catch(() => {})
+        if (data.newly_granted?.length > 0 && onAchievementUnlocked) {
+          fetch('/api/users/me', { headers }).then(r => r.json())
+            .then(u => { if (u.display_name) { setUser(u); onUserUpdate(u) } }).catch(() => {})
+          data.newly_granted.forEach(a => onAchievementUnlocked(a))
+        }
+      } else {
+        setGroupMsg(data.error || 'Could not join group')
+      }
+    } catch {
+      setGroupMsg('Network error')
+    }
+    setJoiningPublicId(null)
   }
 
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 9 }, (_, i) => currentYear + i)
 
-  const totalBets    = stats?.total_bets ?? 0
-  const unlocked     = stats ? unlockedAchievements(stats, totalBets) : new Set()
-  const schoolShort  = SCHOOL_SHORT[user.school] || user.school || 'No school set'
-  const gradLabel    = user.graduation_year ? `'${String(user.graduation_year).slice(2)}` : ''
+  const unlocked       = new Set(user.achievements_granted || [])
+  const schoolShort    = SCHOOL_SHORT[user.school] || user.school || 'No school set'
+  const gradLabel      = user.graduation_year ? `'${String(user.graduation_year).slice(2)}` : ''
   const followerCount  = (user.followers || []).length
   const followingCount = (user.following || []).length
 
+  const myGroupIds = new Set(myGroups.map(g => g._id))
+
   return (
     <div className="profile-screen">
-      {/* Header */}
+
+      {/* ── Modals ── */}
+      {viewingUserId && (
+        <UserProfileModal
+          targetId={viewingUserId}
+          currentUserId={user.auth0_id}
+          token={token}
+          onClose={() => setViewingUserId(null)}
+        />
+      )}
+      {viewGroup && (
+        <GroupDetailModal
+          group={viewGroup}
+          currentUserId={user.auth0_id}
+          token={token}
+          onClose={() => setViewGroup(null)}
+        />
+      )}
+
+      {/* ── Top bar ── */}
       <div className="profile-topbar">
         <div>
           <h1>Profile</h1>
@@ -321,7 +573,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
         </div>
       </div>
 
-      {/* Edit form */}
+      {/* ── Edit form ── */}
       {editing && (
         <div className="profile-edit-card">
           <h3 className="profile-edit-title">Edit Profile</h3>
@@ -331,19 +583,11 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
             value={editName}
             onChange={e => setEditName(e.target.value)}
           />
-          <select
-            className="profile-edit-input"
-            value={editSchool}
-            onChange={e => setEditSchool(e.target.value)}
-          >
+          <select className="profile-edit-input" value={editSchool} onChange={e => setEditSchool(e.target.value)}>
             <option value="">No school set</option>
             {PENN_SCHOOLS.map(s => <option key={s} value={s}>{SCHOOL_SHORT[s]}</option>)}
           </select>
-          <select
-            className="profile-edit-input"
-            value={editYear}
-            onChange={e => setEditYear(e.target.value)}
-          >
+          <select className="profile-edit-input" value={editYear} onChange={e => setEditYear(e.target.value)}>
             <option value="">No grad year</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -356,12 +600,10 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
         </div>
       )}
 
-      {/* User card */}
+      {/* ── User card ── */}
       {!editing && (
         <div className="profile-user-card">
-          <div className="profile-avatar">
-            {user.avatar_initials || user.display_name?.[0] || '?'}
-          </div>
+          <div className="profile-avatar">{user.avatar_initials || user.display_name?.[0] || '?'}</div>
           <div className="profile-user-info">
             <div className="profile-name">{user.display_name}</div>
             {(user.school || user.graduation_year) && (
@@ -378,7 +620,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
           <div className="profile-stats-mini">
             <div className="profile-stat-mini">
               <div className="profile-stat-val">{stats?.won_bets ?? '—'}</div>
-              <div className="profile-stat-lbl">Markets Won</div>
+              <div className="profile-stat-lbl">Wins</div>
             </div>
             <div className="profile-stat-mini">
               <div className="profile-stat-val">{stats ? `${stats.win_rate}%` : '—'}</div>
@@ -392,57 +634,68 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
         </div>
       )}
 
-      {/* Statistics */}
-      {stats && !editing && (
+      {/* ── Statistics ── */}
+      {!editing && (
         <div className="profile-stats-card">
           <h2 className="section-title">Statistics</h2>
-          <div className="stat-row">
-            <div className="stat-row-icon" style={{ background: '#dcfce7' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="#00a63e" strokeWidth="2" width="18" height="18">
-                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                <polyline points="16 7 22 7 22 13"/>
-              </svg>
-            </div>
-            <div className="stat-row-info">
-              <div className="stat-row-label">Total Profit</div>
-              <div className="stat-row-sub">All-time earnings</div>
-            </div>
-            <div className={`stat-row-value ${stats.total_profit >= 0 ? 'green' : 'red'}`}>
-              {stats.total_profit >= 0 ? '+' : ''}{stats.total_profit.toLocaleString()} LB
-            </div>
-          </div>
-          <div className="stat-row">
-            <div className="stat-row-icon" style={{ background: '#dbeafe' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" width="18" height="18">
-                <rect x="2" y="3" width="20" height="14" rx="2"/>
-                <path d="M8 21h8M12 17v4"/>
-              </svg>
-            </div>
-            <div className="stat-row-info">
-              <div className="stat-row-label">Total Markets</div>
-              <div className="stat-row-sub">Markets traded in</div>
-            </div>
-            <div className="stat-row-value">{stats.total_bets}</div>
-          </div>
-          <div className="stat-row">
-            <div className="stat-row-icon" style={{ background: '#fef3c7' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" width="18" height="18">
-                <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/>
-                <path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
-                <path d="M4 22h16"/>
-                <path d="M18 2H6v7a6 6 0 0012 0V2z"/>
-              </svg>
-            </div>
-            <div className="stat-row-info">
-              <div className="stat-row-label">Best Streak</div>
-              <div className="stat-row-sub">Consecutive wins</div>
-            </div>
-            <div className="stat-row-value">{stats.best_streak}</div>
-          </div>
+
+          {statsLoading ? (
+            <div className="loading-text" style={{ padding: '12px 0' }}>Loading stats…</div>
+          ) : (
+            <>
+              <div className="stat-row">
+                <div className="stat-row-icon" style={{ background: '#dcfce7' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#00a63e" strokeWidth="2" width="18" height="18">
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                    <polyline points="16 7 22 7 22 13"/>
+                  </svg>
+                </div>
+                <div className="stat-row-info">
+                  <div className="stat-row-label">Total Profit</div>
+                  <div className="stat-row-sub">From resolved bets</div>
+                </div>
+                <div className={`stat-row-value ${(stats?.total_profit ?? 0) >= 0 ? 'green' : 'red'}`}>
+                  {(stats?.total_profit ?? 0) >= 0 ? '+' : ''}{(stats?.total_profit ?? 0).toLocaleString()} LB
+                </div>
+              </div>
+
+              <div className="stat-row">
+                <div className="stat-row-icon" style={{ background: '#dbeafe' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" width="18" height="18">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <path d="M8 21h8M12 17v4"/>
+                  </svg>
+                </div>
+                <div className="stat-row-info">
+                  <div className="stat-row-label">Total Bets</div>
+                  <div className="stat-row-sub">
+                    {stats?.pending_bets ? `${stats.pending_bets} active · ` : ''}{stats?.resolved_bets ?? 0} resolved
+                  </div>
+                </div>
+                <div className="stat-row-value">{stats?.total_bets ?? 0}</div>
+              </div>
+
+              <div className="stat-row">
+                <div className="stat-row-icon" style={{ background: '#fef3c7' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" width="18" height="18">
+                    <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/>
+                    <path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
+                    <path d="M4 22h16"/>
+                    <path d="M18 2H6v7a6 6 0 0012 0V2z"/>
+                  </svg>
+                </div>
+                <div className="stat-row-info">
+                  <div className="stat-row-label">Best Streak</div>
+                  <div className="stat-row-sub">Consecutive wins</div>
+                </div>
+                <div className="stat-row-value">{stats?.best_streak ?? 0}</div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* Achievements */}
+      {/* ── Achievements ── */}
       {!editing && (
         <div className="achievements-section">
           <h2 className="section-title">Achievements</h2>
@@ -493,7 +746,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
 
           {socialLoaded && socialTab === 'following' && (
             following.length === 0
-              ? <div className="empty-state">You're not following anyone yet — follow people on the leaderboard!</div>
+              ? <div className="empty-state">You're not following anyone yet</div>
               : <div className="leaderboard-list">
                   {following.map(u => (
                     <SocialUserRow
@@ -502,6 +755,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                       isMe={u.auth0_id === user.auth0_id}
                       token={token}
                       initialFollowing={true}
+                      onViewProfile={setViewingUserId}
                     />
                   ))}
                 </div>
@@ -518,6 +772,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                       isMe={u.auth0_id === user.auth0_id}
                       token={token}
                       initialFollowing={(user.following || []).includes(u.auth0_id)}
+                      onViewProfile={setViewingUserId}
                     />
                   ))}
                 </div>
@@ -531,34 +786,30 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
           <h2 className="section-title">Leaderboard</h2>
 
           <div className="lb-mode-tabs">
-            <button
-              className={`lb-mode-tab ${lbMode === 'global' ? 'active' : ''}`}
-              onClick={() => setLbMode('global')}
-            >Penn</button>
+            <button className={`lb-mode-tab ${lbMode === 'global' ? 'active' : ''}`} onClick={() => setLbMode('global')}>
+              Penn
+            </button>
+            <button className={`lb-mode-tab ${lbMode === 'following' ? 'active' : ''}`} onClick={() => setLbMode('following')}>
+              Following
+            </button>
             {user.school && (
-              <button
-                className={`lb-mode-tab ${lbMode === 'school' ? 'active' : ''}`}
-                onClick={() => setLbMode('school')}
-              >{SCHOOL_SHORT[user.school] || 'School'}</button>
+              <button className={`lb-mode-tab ${lbMode === 'school' ? 'active' : ''}`} onClick={() => setLbMode('school')}>
+                {SCHOOL_SHORT[user.school] || 'School'}
+              </button>
             )}
             {user.graduation_year && (
-              <button
-                className={`lb-mode-tab ${lbMode === 'year' ? 'active' : ''}`}
-                onClick={() => setLbMode('year')}
-              >Class of {user.graduation_year}</button>
+              <button className={`lb-mode-tab ${lbMode === 'year' ? 'active' : ''}`} onClick={() => setLbMode('year')}>
+                Class of {user.graduation_year}
+              </button>
             )}
           </div>
-
-          {!user.school && lbMode !== 'global' && (
-            <div className="lb-setup-hint">
-              Set your school to see school and class leaderboards
-            </div>
-          )}
 
           {lbLoading ? (
             <div className="loading-text">Loading…</div>
           ) : leaderboard.length === 0 ? (
-            <div className="empty-state">No rankings yet</div>
+            <div className="empty-state">
+              {lbMode === 'following' ? 'Follow people to see them here' : 'No rankings yet'}
+            </div>
           ) : (
             <div className="leaderboard-list">
               {leaderboard.map((u, i) => (
@@ -568,6 +819,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                   user={u}
                   isMe={u.auth0_id === user.auth0_id}
                   token={token}
+                  onViewProfile={setViewingUserId}
                 />
               ))}
             </div>
@@ -578,7 +830,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
       {/* ── Groups section ── */}
       {!editing && (
         <div className="leaderboard-section" onClick={loadGroups}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <h2 className="section-title" style={{ marginBottom: 0 }}>Groups</h2>
             <button
               className="follow-btn"
@@ -589,9 +841,9 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
             </button>
           </div>
 
-          {/* Create group modal */}
+          {/* Create group */}
           {showCreateGroup && (
-            <div className="profile-edit-card" style={{ marginTop: 12 }} onClick={e => e.stopPropagation()}>
+            <div className="profile-edit-card" style={{ marginBottom: 12, marginLeft: 0, marginRight: 0 }} onClick={e => e.stopPropagation()}>
               <h3 className="profile-edit-title">Create a Group</h3>
               <input
                 className="profile-edit-input"
@@ -606,7 +858,7 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                   onChange={e => setNewGroupPublic(e.target.checked)}
                   style={{ marginRight: 6 }}
                 />
-                Public group
+                Public group (anyone can find and join)
               </label>
               <div className="profile-edit-actions">
                 <button className="btn-primary" onClick={handleCreateGroup} disabled={creatingGroup || !newGroupName.trim()}>
@@ -635,19 +887,21 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
               {joiningGroup ? '…' : 'Join'}
             </button>
           </div>
-          {groupMsg && <div className="lb-setup-hint" style={{ color: groupMsg.includes('created') || groupMsg.includes('Joined') ? '#00a63e' : '#e7000b' }}>{groupMsg}</div>}
 
-          {/* Groups list */}
+          {groupMsg && (
+            <div className="lb-setup-hint" style={{ color: (groupMsg.includes('created') || groupMsg.includes('Joined')) ? '#00a63e' : '#e7000b', marginTop: 8 }}>
+              {groupMsg}
+            </div>
+          )}
+
+          {/* My groups */}
           {groupsLoaded && myGroups.length === 0 && (
             <div className="empty-state">No groups yet — create one or join with an invite code</div>
           )}
 
           {groupsLoaded && myGroups.map(group => (
             <div key={group._id} className="group-card">
-              <div
-                className="group-card-header"
-                onClick={e => { e.stopPropagation(); loadGroupRankings(group._id) }}
-              >
+              <div className="group-card-header" onClick={e => { e.stopPropagation(); setViewGroup(group) }}>
                 <div className="group-card-info">
                   <div className="lb-display-name">{group.name}</div>
                   <div className="lb-username">
@@ -656,37 +910,59 @@ export default function ProfileScreen({ user: initialUser, onLogout, onUserUpdat
                     {group.is_public && ' · Public'}
                   </div>
                 </div>
-                <svg
-                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                  width="16" height="16"
-                  style={{ transform: expandedGroup === group._id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
-                >
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
+                <span style={{ fontSize: 12, color: 'var(--text-light)', flexShrink: 0 }}>View →</span>
               </div>
-
-              {expandedGroup === group._id && groupRankings[group._id] && (
-                <div className="group-rankings">
-                  {groupRankings[group._id].map((u, i) => (
-                    <div key={u.auth0_id || i} className={`lb-row ${u.auth0_id === user.auth0_id ? 'lb-row-me' : ''}`} style={{ padding: '6px 0' }}>
-                      <div className="lb-rank">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}</div>
-                      <div className="lb-avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
-                        {u.avatar_initials || '?'}
-                      </div>
-                      <div className="lb-name" style={{ flex: 1 }}>
-                        <div className="lb-display-name">{u.display_name}</div>
-                      </div>
-                      <div className="lb-balance">{(u.balance || 0).toLocaleString()} LB</div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
+
+          {/* Browse public groups */}
+          <div
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 10 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="section-title" style={{ marginBottom: 0, fontSize: 13 }}>Public Groups</div>
+            <button
+              className="lb-mode-tab"
+              style={{ fontSize: 11, padding: '4px 10px' }}
+              onClick={() => { loadPublicGroups(); loadGroups() }}
+            >
+              Browse
+            </button>
+          </div>
+
+          {publicGroupsLoaded && publicGroups.length === 0 && (
+            <div className="empty-state" style={{ padding: '12px 0' }}>No public groups yet</div>
+          )}
+
+          {publicGroupsLoaded && publicGroups.map(group => {
+            const alreadyMember = myGroupIds.has(group._id)
+            return (
+              <div key={group._id} className="group-card" onClick={e => e.stopPropagation()}>
+                <div className="group-card-header" onClick={() => setViewGroup(group)}>
+                  <div className="group-card-info">
+                    <div className="lb-display-name">{group.name}</div>
+                    <div className="lb-username">{group.member_ids?.length || 1} member{group.member_ids?.length !== 1 ? 's' : ''}</div>
+                  </div>
+                  {alreadyMember ? (
+                    <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600, flexShrink: 0 }}>Joined ✓</span>
+                  ) : (
+                    <button
+                      className="follow-btn"
+                      style={{ fontSize: 11, padding: '4px 10px' }}
+                      disabled={joiningPublicId === group._id}
+                      onClick={e => { e.stopPropagation(); handleJoinPublicGroup(group) }}
+                    >
+                      {joiningPublicId === group._id ? '…' : 'Join'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Sign out */}
+      {/* ── Sign out ── */}
       {!editing && (
         <div className="profile-signout">
           <button className="signout-btn" onClick={onLogout}>Sign Out</button>

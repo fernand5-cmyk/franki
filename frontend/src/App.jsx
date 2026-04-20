@@ -153,6 +153,7 @@ export default function App() {
           user={user}
           onBack={closeMarket}
           onUserUpdate={handleUserUpdate}
+          onAchievementUnlocked={addNotification}
         />
       )
     }

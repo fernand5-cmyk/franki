@@ -64,30 +64,45 @@ def create_indexes():
 # ── Achievement rewards ───────────────────────────────────────────────────────
 
 ACHIEVEMENT_REWARDS = {
-    "first_bet":      50,
-    "market_maven":   100,
-    "high_roller":    200,
-    "hot_streak":     150,
-    "prediction_pro": 500,
-    "early_bird":     75,
+    "first_bet":        50,
+    "place_ten_bets":   100,
+    "market_maven":     150,
+    "high_roller":      200,
+    "hot_streak":       150,
+    "prediction_pro":   500,
+    "early_bird":       75,
+    "early_bird_10":    75,
+    "made_leaderboard": 50,
+    "daily_streak":     150,
+    "join_leaderboard": 50,
 }
 
 ACHIEVEMENT_LABELS = {
-    "first_bet":      "First Bet",
-    "market_maven":   "Market Maven",
-    "high_roller":    "High Roller",
-    "hot_streak":     "Hot Streak",
-    "prediction_pro": "Prediction Pro",
-    "early_bird":     "Early Bird",
+    "first_bet":        "First Bet",
+    "place_ten_bets":   "Dedicated Bettor",
+    "market_maven":     "Market Maven",
+    "high_roller":      "High Roller",
+    "hot_streak":       "Hot Streak",
+    "prediction_pro":   "Prediction Pro",
+    "early_bird":       "Early Bird",
+    "early_bird_10":    "Trendsetter",
+    "made_leaderboard": "Group Leader",
+    "daily_streak":     "Streak Master",
+    "join_leaderboard": "Team Player",
 }
 
 ACHIEVEMENT_ICONS = {
-    "first_bet":      "🎯",
-    "market_maven":   "📊",
-    "high_roller":    "👑",
-    "hot_streak":     "🔥",
-    "prediction_pro": "🔮",
-    "early_bird":     "⭐",
+    "first_bet":        "🎯",
+    "place_ten_bets":   "🎲",
+    "market_maven":     "📊",
+    "high_roller":      "👑",
+    "hot_streak":       "🔥",
+    "prediction_pro":   "🔮",
+    "early_bird":       "⭐",
+    "early_bird_10":    "🌟",
+    "made_leaderboard": "🏗️",
+    "daily_streak":     "📅",
+    "join_leaderboard": "🤝",
 }
 
 
@@ -272,17 +287,17 @@ def update_user_profile(user_id, updates):
 
 def get_user_stats(user_id):
     """Compute win rate, total profit, best streak, rank."""
-    user_bets = list(bets.find({"user_id": user_id, "status": {"$in": ["won", "lost"]}}))
-    total    = len(user_bets)
-    won      = sum(1 for b in user_bets if b["status"] == "won")
-    win_rate = round(won / total * 100) if total > 0 else 0
+    resolved_bets = list(bets.find({"user_id": user_id, "status": {"$in": ["won", "lost"]}}))
+    total_resolved = len(resolved_bets)
+    won      = sum(1 for b in resolved_bets if b["status"] == "won")
+    win_rate = round(won / total_resolved * 100) if total_resolved > 0 else 0
 
-    total_wagered = sum(b["amount"] for b in user_bets)
-    total_payout  = sum(b.get("payout", 0) or 0 for b in user_bets)
+    total_wagered = sum(b["amount"] for b in resolved_bets)
+    total_payout  = sum(b.get("payout", 0) or 0 for b in resolved_bets)
     total_profit  = total_payout - total_wagered
 
     # Best streak: consecutive wins
-    sorted_bets = sorted(user_bets, key=lambda b: b.get("placed_at", now()))
+    sorted_bets = sorted(resolved_bets, key=lambda b: b.get("placed_at", now()))
     best_streak = cur_streak = 0
     for b in sorted_bets:
         if b["status"] == "won":
@@ -296,14 +311,20 @@ def get_user_stats(user_id):
     bal  = user.get("balance", 0) if user else 0
     rank = users.count_documents({"balance": {"$gt": bal}}) + 1
 
+    # All bets (any status)
+    total_all = bets.count_documents({"user_id": user_id})
+    pending   = bets.count_documents({"user_id": user_id, "status": "pending"})
+
     return {
-        "total_bets":    total,
-        "won_bets":      won,
-        "win_rate":      win_rate,
-        "total_profit":  total_profit,
-        "total_wagered": total_wagered,
-        "best_streak":   best_streak,
-        "rank":          rank,
+        "total_bets":     total_all,
+        "resolved_bets":  total_resolved,
+        "pending_bets":   pending,
+        "won_bets":       won,
+        "win_rate":       win_rate,
+        "total_profit":   total_profit,
+        "total_wagered":  total_wagered,
+        "best_streak":    best_streak,
+        "rank":           rank,
     }
 
 
@@ -584,30 +605,77 @@ def check_and_grant_achievements(user_id):
         return []
 
     already_granted = set(user.get("achievements_granted", []))
-    stats = get_user_stats(user_id)
-    total_bets = stats["total_bets"]
 
-    # Compute which should be unlocked now
+    # Count ALL bets placed (including pending) — fixes the core bug where
+    # achievements never fired because get_user_stats only counted resolved bets
+    total_all_bets = bets.count_documents({"user_id": user_id})
+
+    # Stats for resolved-only metrics (win rate, profit, streak)
+    stats = get_user_stats(user_id)
+
     should_have = set()
-    if total_bets >= 1:
+
+    # ── Bet count achievements ────────────────────────────────────────────────
+    if total_all_bets >= 1:
         should_have.add("first_bet")
-    if total_bets >= 10:
+    if total_all_bets >= 10:
+        should_have.add("place_ten_bets")
+
+    # ── Unique markets traded ─────────────────────────────────────────────────
+    unique_markets = len(bets.distinct("market_id", {"user_id": user_id}))
+    if unique_markets >= 10:
         should_have.add("market_maven")
-    if stats["total_wagered"] >= 1000:
+
+    # ── Wagered total ─────────────────────────────────────────────────────────
+    agg = list(bets.aggregate([
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]))
+    total_wagered_all = agg[0]["total"] if agg else 0
+    if total_wagered_all >= 1000:
         should_have.add("high_roller")
+
+    # ── Win streak ────────────────────────────────────────────────────────────
     if stats["best_streak"] >= 3:
         should_have.add("hot_streak")
-    if stats["win_rate"] >= 75 and total_bets >= 20:
-        should_have.add("prediction_pro")
-    # early_bird: user placed a bet on a market with < 100 total bets at placement time
-    # (approximated: if any of their bets is among the first 100 on that market)
-    user_bet_market_ids = [b["market_id"] for b in bets.find({"user_id": user_id})]
-    for mid in user_bet_market_ids:
-        count = bets.count_documents({"market_id": mid})
-        if count <= 100:
-            should_have.add("early_bird")
-            break
 
+    # ── Prediction pro ────────────────────────────────────────────────────────
+    if stats["win_rate"] >= 75 and stats["resolved_bets"] >= 20:
+        should_have.add("prediction_pro")
+
+    # ── Early bird: user was among the first 5 / 10 to bet on any market ─────
+    need_5  = "early_bird"    not in already_granted
+    need_10 = "early_bird_10" not in already_granted
+    if need_5 or need_10:
+        for bet in bets.find({"user_id": user_id}, {"market_id": 1, "placed_at": 1}):
+            placed = bet.get("placed_at")
+            if not placed:
+                continue
+            earlier = bets.count_documents({
+                "market_id": bet["market_id"],
+                "placed_at": {"$lt": placed}
+            })
+            if need_10 and earlier < 10:
+                should_have.add("early_bird_10")
+                need_10 = False
+            if need_5 and earlier < 5:
+                should_have.add("early_bird")
+                need_5 = False
+            if not need_5 and not need_10:
+                break
+
+    # ── Group leaderboard achievements ────────────────────────────────────────
+    if leaderboards.count_documents({"owner_id": user_id}) >= 1:
+        should_have.add("made_leaderboard")
+
+    if leaderboards.count_documents({"member_ids": user_id, "owner_id": {"$ne": user_id}}) >= 1:
+        should_have.add("join_leaderboard")
+
+    # ── Daily streak ──────────────────────────────────────────────────────────
+    if (user.get("daily_bonus_streak") or 0) >= 10:
+        should_have.add("daily_streak")
+
+    # ── Grant new ones ────────────────────────────────────────────────────────
     new_achievements = should_have - already_granted
     newly_granted = []
 
@@ -691,27 +759,46 @@ def reject_market(market_id, reason=""):
 DAILY_BONUS_AMOUNT = 25
 
 def claim_daily_bonus(user_id):
-    """Grant 25 LB once per calendar day. Returns (result, error)."""
+    """Grant 25 LB once per calendar day. Tracks consecutive-day streak. Returns (result, error)."""
     user = users.find_one({"auth0_id": user_id})
     if not user:
         return None, "User not found"
 
     today = datetime.now(timezone.utc).date()
     last  = user.get("last_daily_bonus")
+    last_date = None
     if last:
         if isinstance(last, str):
-            last = datetime.fromisoformat(last).date()
+            last_date = datetime.fromisoformat(last.replace("Z", "+00:00")).date()
         elif isinstance(last, datetime):
-            last = last.date()
-        if last >= today:
-            return {"already_claimed": True, "bonus": 0}, None
+            last_date = last.date()
+
+    if last_date and last_date >= today:
+        return {
+            "already_claimed": True,
+            "bonus": 0,
+            "streak": user.get("daily_bonus_streak", 0)
+        }, None
+
+    # Compute new streak: +1 if they claimed yesterday, else reset to 1
+    current_streak = user.get("daily_bonus_streak") or 0
+    yesterday = today - timedelta(days=1)
+    if last_date == yesterday:
+        current_streak += 1
+    else:
+        current_streak = 1
 
     users.update_one({"auth0_id": user_id}, {
         "$inc": {"balance": DAILY_BONUS_AMOUNT},
-        "$set": {"last_daily_bonus": now(), "updated_at": now()}
+        "$set": {
+            "last_daily_bonus":   now(),
+            "daily_bonus_streak": current_streak,
+            "updated_at":         now(),
+        }
     })
-    log_transaction(user_id, "daily_bonus", DAILY_BONUS_AMOUNT, "Daily login bonus 🎁")
-    return {"already_claimed": False, "bonus": DAILY_BONUS_AMOUNT}, None
+    log_transaction(user_id, "daily_bonus", DAILY_BONUS_AMOUNT,
+                    f"Daily login bonus 🎁 (day {current_streak} streak)")
+    return {"already_claimed": False, "bonus": DAILY_BONUS_AMOUNT, "streak": current_streak}, None
 
 
 # ── Social: follow / feed ─────────────────────────────────────────────────────
@@ -871,6 +958,55 @@ def get_user_following(user_id):
         {"auth0_id": 1, "display_name": 1, "username": 1, "avatar_initials": 1, "balance": 1}
     ))
     return [serialize(u) for u in result]
+
+
+# ── Following leaderboard ─────────────────────────────────────────────────────
+
+def get_following_leaderboard(user_id, limit=50):
+    """Return followed users + self ranked by balance."""
+    user = users.find_one({"auth0_id": user_id})
+    if not user:
+        return []
+    following_ids = user.get("following") or []
+    ids = following_ids + [user_id]
+    result = list(users.find(
+        {"auth0_id": {"$in": ids}},
+        {"auth0_id": 1, "display_name": 1, "username": 1, "avatar_initials": 1,
+         "balance": 1, "school": 1, "graduation_year": 1}
+    ).sort("balance", DESCENDING).limit(limit))
+    return [serialize(u) for u in result]
+
+
+# ── Public profile ────────────────────────────────────────────────────────────
+
+def get_user_public_profile(target_id):
+    """Return public-safe info about any user."""
+    user = users.find_one({"auth0_id": target_id})
+    if not user:
+        return None
+    s = get_user_stats(target_id)
+    return {
+        "auth0_id":            user.get("auth0_id"),
+        "display_name":        user.get("display_name"),
+        "username":            user.get("username"),
+        "avatar_initials":     user.get("avatar_initials"),
+        "balance":             user.get("balance"),
+        "school":              user.get("school"),
+        "graduation_year":     user.get("graduation_year"),
+        "achievements_granted": user.get("achievements_granted", []),
+        "followers_count":     len(user.get("followers", [])),
+        "following_count":     len(user.get("following", [])),
+        "stats":               s,
+    }
+
+
+# ── Public leaderboards ───────────────────────────────────────────────────────
+
+def get_public_leaderboards(limit=30):
+    """Return all public custom leaderboards."""
+    boards = list(leaderboards.find({"is_public": True})
+                              .sort("created_at", DESCENDING).limit(limit))
+    return [serialize(b) for b in boards]
 
 
 # ── Admin analytics ───────────────────────────────────────────────────────────

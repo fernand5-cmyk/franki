@@ -54,7 +54,7 @@ function PriceChart({ history, yesPrice }) {
   )
 }
 
-export default function MarketDetailScreen({ market: initialMarket, user, onBack, onUserUpdate }) {
+export default function MarketDetailScreen({ market: initialMarket, user, onBack, onUserUpdate, onAchievementUnlocked }) {
   const [market, setMarket]     = useState(initialMarket)
   const [side, setSide]         = useState(initialMarket.prefillSide || 'yes')
   const [amount, setAmount]     = useState('100')
@@ -112,6 +112,10 @@ export default function MarketDetailScreen({ market: initialMarket, user, onBack
         const newBal = balance - amountNum
         setBalance(newBal)
         onUserUpdate({ ...user, balance: newBal })
+        // Fire achievement toasts for any newly unlocked achievements
+        if (data.newly_granted?.length > 0 && onAchievementUnlocked) {
+          data.newly_granted.forEach(a => onAchievementUnlocked(a))
+        }
         // Refresh market prices
         const mres = await fetch(`/api/markets/${market._id || market.id}`)
         const mdata = await mres.json()
