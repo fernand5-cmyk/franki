@@ -167,19 +167,30 @@ def _serialize_value(v):
 
 # ── Popularity scoring ────────────────────────────────────────────────────────
 
+def _to_datetime(v):
+    """Coerce a value to a timezone-aware datetime, or return None."""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        try:
+            v = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if isinstance(v, datetime):
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v
+    return None
+
 def popularity_score(m):
     volume    = m.get("volume", 0)
     watchers  = m.get("watchers", 0) * 100
-    created   = m.get("created_at", now())
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
+    created   = _to_datetime(m.get("created_at")) or now()
     age_h     = (now() - created).total_seconds() / 3600
     newness   = max(0, 2000 - age_h * 20)
     urgency   = 0
-    closes    = m.get("closes_at")
+    closes    = _to_datetime(m.get("closes_at"))
     if closes:
-        if closes.tzinfo is None:
-            closes = closes.replace(tzinfo=timezone.utc)
         h_left = (closes - now()).total_seconds() / 3600
         if 0 < h_left <= 24:
             urgency = 500
@@ -340,7 +351,7 @@ def create_market(question, category, icon, yes_price, no_price, closes_at, crea
         "no_price":      no_price,
         "volume":        1000,
         "watchers":      0,
-        "closes_at":     closes_at,
+        "closes_at":     _to_datetime(closes_at) or closes_at,
         "created_by":    created_by,
         "price_history": generate_fake_price_history(yes_price),
         "created_at":    ts,
@@ -641,7 +652,7 @@ def submit_market_for_review(question, category, icon, question_type, yes_price,
         "no_price":          100 - yes_price,
         "volume":            1000,
         "watchers":          0,
-        "closes_at":         closes_at,
+        "closes_at":         _to_datetime(closes_at) or closes_at,
         "created_by":        created_by,
         "price_history":     generate_fake_price_history(yes_price),
         "rejection_reason":  None,
