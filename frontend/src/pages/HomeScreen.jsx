@@ -79,6 +79,7 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
   const [activeTab, setActiveTab]   = useState('all')
   const [markets, setMarkets]       = useState([])
   const [loading, setLoading]       = useState(true)
+  const [fetchError, setFetchError] = useState(false)
   const [search, setSearch]         = useState('')
   const token = localStorage.getItem('token')
 
@@ -87,14 +88,16 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
     const controller = new AbortController()
     setLoading(true)
     setMarkets([])
+    setFetchError(false)
     fetch(`/api/markets?category=${activeTab}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setMarkets(data)
+        else setFetchError(true)
         setLoading(false)
       })
       .catch(err => {
-        if (err.name !== 'AbortError') setLoading(false)
+        if (err.name !== 'AbortError') { setFetchError(true); setLoading(false) }
       })
     return () => controller.abort()
   }, [activeTab, view])
@@ -191,7 +194,13 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
           />
         ))}
 
-        {!loading && filtered.length === 0 && (
+        {!loading && fetchError && (
+          <div className="markets-empty">
+            <span>⚠️ Could not reach server — make sure the backend is running</span>
+          </div>
+        )}
+
+        {!loading && !fetchError && filtered.length === 0 && (
           <div className="markets-empty">
             <span>No markets found</span>
           </div>
