@@ -292,7 +292,7 @@ def join_leaderboard(invite_code):
     if not board:
         return jsonify({"error": "Invalid invite code"}), 404
     leaderboards.update_one(
-        {"_id": board["_id"]},
+        {"_id": to_id(str(board["_id"]))},
         {"$addToSet": {"member_ids": g.user_id}, "$set": {"updated_at": now()}}
     )
     return jsonify({"message": "Joined", "leaderboard_id": str(board["_id"])})

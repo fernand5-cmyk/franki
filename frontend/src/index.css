@@ -19,7 +19,6 @@
   --text-dark:   #101828;
   --text-mid:    #364153;
   --text-light:  #6a7282;
-  --border:      rgba(255,255,255,0.08);
   --font:        'Inter', -apple-system, sans-serif;
   --radius-sm:   10px;
   --radius:      16px;
@@ -276,8 +275,8 @@ html, body { height: 100%; background: #111; font-family: var(--font); -webkit-f
 .wallet-balance-label  { font-size: 13px; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
 .wallet-balance-amount { font-size: 36px; font-weight: 800; color: white; letter-spacing: -1px; }
 .wallet-balance-icon {
-  width: 56px; height: 56px; background: rgba(255,255,255,0.1); border-radius: 16px;
-  display: flex; align-items: center; justify-content: center; color: white;
+  width: 56px; height: 56px; background: white; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center; color: var(--navy);
 }
 .wallet-balance-trend { display: flex; align-items: center; gap: 6px; margin-bottom: 18px; }
 .wallet-balance-trend .positive { color: #05df72; font-size: 14px; font-weight: 600; }
@@ -376,7 +375,7 @@ html, body { height: 100%; background: #111; font-family: var(--font); -webkit-f
 .result-detail-value { font-size: 14px; font-weight: 700; color: var(--text-dark); }
 .result-detail-value.green { color: var(--green); }
 .result-divider { width: 1px; height: 30px; background: #e5e7eb; margin: 0 4px; }
-.result-profit-chip { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; color: var(--green); }
+.result-profit-chip { display: flex; align-items: center; gap: 4px; }
 
 /* ===== PROFILE ===== */
 .profile-screen { min-height: 100%; background: var(--gray-bg); display: flex; flex-direction: column; padding-bottom: 88px; }
@@ -512,7 +511,7 @@ html, body { height: 100%; background: #111; font-family: var(--font); -webkit-f
 
 /* ── Home screen additions ─────────────────────────────────────────────────── */
 .home-motto {
-  font-size: 11px; color: rgba(255,255,255,0.55); font-style: italic;
+  font-size: 12px; color: rgba(255,255,255,0.55); font-style: italic;
   font-weight: 400; margin-top: 1px; line-height: 1.4;
 }
 .suggest-bet-btn {
@@ -524,7 +523,7 @@ html, body { height: 100%; background: #111; font-family: var(--font); -webkit-f
 
 /* ── Achievement reward badge ──────────────────────────────────────────────── */
 .achievement-reward {
-  font-size: 10px; font-weight: 700; margin-top: 4px;
+  font-size: 11px; font-weight: 700; margin-top: 4px;
   opacity: 0.85;
 }
 .achievement-card.unlocked .achievement-reward { color: rgba(255,255,255,0.9); }
@@ -552,7 +551,7 @@ html, body { height: 100%; background: #111; font-family: var(--font); -webkit-f
   font-size: 28px; flex-shrink: 0;
 }
 .achievement-toast-body { display: flex; flex-direction: column; gap: 1px; }
-.achievement-toast-title  { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.05em; }
+.achievement-toast-title  { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.05em; }
 .achievement-toast-name   { font-size: 14px; font-weight: 700; }
 .achievement-toast-reward { font-size: 12px; color: #4ade80; font-weight: 600; }
 
@@ -871,13 +870,16 @@ html, body { height: 100%; background: #111; font-family: var(--font); -webkit-f
 
 /* ── Home view toggle (Markets / Friends) ──────────────────────────────────── */
 .home-view-toggle {
-  display: flex; background: rgba(255,255,255,0.08); border-radius: 20px;
-  margin: 0 20px 4px; padding: 3px; gap: 2px;
+  display: flex; background: var(--navy); padding: 0 20px 14px;
+}
+.home-view-toggle-inner {
+  display: flex; background: rgba(255,255,255,0.12); border-radius: 20px;
+  padding: 3px; gap: 2px; flex: 1;
 }
 .view-toggle-btn {
   flex: 1; padding: 7px; border: none; border-radius: 18px; font-size: 13px;
   font-weight: 600; font-family: var(--font); cursor: pointer;
-  color: rgba(255,255,255,0.6); background: transparent; transition: all 0.2s;
+  color: rgba(255,255,255,0.65); background: transparent; transition: all 0.2s;
 }
 .view-toggle-btn.active {
   background: white; color: var(--navy);

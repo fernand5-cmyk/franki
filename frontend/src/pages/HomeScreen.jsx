@@ -84,16 +84,18 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
 
   useEffect(() => {
     if (view !== 'markets') return
-    setMarkets([])
-    setLoading(true)
     const controller = new AbortController()
+    setLoading(true)
+    setMarkets([])
     fetch(`/api/markets?category=${activeTab}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setMarkets(data)
         setLoading(false)
       })
-      .catch(err => { if (err.name !== 'AbortError') setLoading(false) })
+      .catch(err => {
+        if (err.name !== 'AbortError') setLoading(false)
+      })
     return () => controller.abort()
   }, [activeTab, view])
 
@@ -135,12 +137,14 @@ export default function HomeScreen({ user, onOpenMarket, onCreateBet, unreadCoun
 
       {/* View toggle: Markets / Friends */}
       <div className="home-view-toggle">
-        <button className={`view-toggle-btn ${view === 'markets' ? 'active' : ''}`} onClick={() => setView('markets')}>
-          Markets
-        </button>
-        <button className={`view-toggle-btn ${view === 'feed' ? 'active' : ''}`} onClick={() => setView('feed')}>
-          Friends
-        </button>
+        <div className="home-view-toggle-inner">
+          <button className={`view-toggle-btn ${view === 'markets' ? 'active' : ''}`} onClick={() => setView('markets')}>
+            Markets
+          </button>
+          <button className={`view-toggle-btn ${view === 'feed' ? 'active' : ''}`} onClick={() => setView('feed')}>
+            Friends
+          </button>
+        </div>
       </div>
 
       {/* Friends Feed */}

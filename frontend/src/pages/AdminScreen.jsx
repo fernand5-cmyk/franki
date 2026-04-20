@@ -366,7 +366,7 @@ export default function AdminScreen({ user, onLogout }) {
         <button className={`admin-tab ${tab === 'create' ? 'active' : ''}`} onClick={() => setTab('create')}>
           Create
         </button>
-        <button className={`admin-tab ${tab === 'resolve' ? 'active' : ''}`} onClick={() => { setTab('resolve'); loadLive() }}>
+        <button className={`admin-tab ${tab === 'resolve' ? 'active' : ''}`} onClick={() => { loadLive(); setTab('resolve') }}>
           Resolve
         </button>
         <button className={`admin-tab ${tab === 'analytics' ? 'active' : ''}`} onClick={() => setTab('analytics')}>
